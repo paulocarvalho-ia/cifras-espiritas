@@ -168,6 +168,10 @@ body {
   font-weight: 600;
 }
 
+.tom-original strong {
+  color: #4a3a2a;
+}
+
 .btn-voltar {
   position: absolute;
   left: 12px;
@@ -229,10 +233,12 @@ body {
   gap: 12px;
   padding: 10px 16px;
   border-top: 1px solid rgba(0,0,0,0.06);
+  flex-wrap: wrap;
 }
 
 .btn-editar,
-.btn-excluir {
+.btn-excluir,
+.btn-exportar-musica {
   background: none;
   border: 1px solid rgba(0,0,0,0.1);
   padding: 6px 16px;
@@ -245,6 +251,7 @@ body {
 
 .btn-editar:hover { background: rgba(0,0,0,0.06); }
 .btn-excluir:hover { background: rgba(255,0,0,0.08); color: #c44; }
+.btn-exportar-musica:hover { background: rgba(0,0,0,0.06); }
 
 /* Formulário (nova/editar) */
 .form-container {
