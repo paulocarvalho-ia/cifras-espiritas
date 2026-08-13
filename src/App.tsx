@@ -16,6 +16,7 @@ function carregarMusicas(): Musica[] {
       id: 'joanna-caminhos-do-coracao',
       titulo: 'Caminhos do Coração',
       autor: 'Joanna (Pessoa = Pessoas)',
+      tom: 'C',
       conteudo: `[Intro] G#7  G7
 
          C                     C7M
@@ -110,7 +111,6 @@ interface AcordeParse {
 }
 
 function parseAcorde(token: string): AcordeParse | null {
-  // Exemplos: C, C#, Db, C7M, Bm7(5-), E7(9-), G/B, F#m7(11)
   const match = token.match(/^([A-Ga-g])([#b]?)(.*)$/);
   if (!match) return null;
   let [, root, accidental, rest] = match;
@@ -135,7 +135,6 @@ function transporRoot(root: string, semitons: number): string {
   const flatSharpMap: Record<string, string> = {
     'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#',
   };
-  // Normaliza para sustenido
   const normal = flatSharpMap[root] || root;
   const idx = NOTAS.indexOf(normal);
   if (idx === -1) return root;
@@ -161,23 +160,54 @@ function transporAcorde(token: string, semitons: number): string {
 
 function isAcordeToken(token: string): boolean {
   if (!token) return false;
-  // Aceita tokens que tenham letra A-G no início e poucos caracteres minúsculos
+  // Aceita acordes como C, C#, Db, C7M, Bm7(5-), E7(9-), G/B, F#m7(11)
+  // Rejeita palavras que começam com nota mas são longas demais ou têm letras incomuns
   const limpo = token.replace(/[()\d,./#b]/g, '');
-  return /^[A-G][A-Za-z0-9#()*+°-]*$/.test(token) && limpo.length <= 8;
+  if (limpo.length > 8) return false;
+  if (!/^[A-Ga-g]/.test(token)) return false;
+  // rejeita minúsculas que não sejam 'b' (bemol) ou 'm' (menor)
+  const rest = token.slice(1);
+  if (/[a-su-z]/.test(rest)) return false;
+  return /^[A-Ga-g][#b]?[A-Za-z0-9#()*+°/-]*$/.test(token);
+}
+
+function ehLinhaDeAcordes(linha: string): boolean {
+  const tokens = linha.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return false;
+  const acordes = tokens.filter(t => isAcordeToken(t));
+  if (acordes.length === 0) return false;
+  // Se começa com colchetes (ex: [Intro]) e tem acordes, transpor
+  if (linha.trim().startsWith('[')) return true;
+  const densidade = acordes.length / tokens.length;
+  return densidade >= 0.5;
 }
 
 function transporTexto(texto: string, semitons: number): string {
   if (semitons === 0) return texto;
   return texto.split('\n').map(linha => {
-    // Heurística: transpor apenas linhas com densidade alta de acordes
-    const tokens = linha.trim().split(/\s+/).filter(Boolean);
-    if (tokens.length === 0) return linha;
-    const acordes = tokens.filter(t => isAcordeToken(t));
-    const densidade = acordes.length / tokens.length;
-    if (densidade >= 0.7 && acordes.length >= 2) {
-      return '    ' + tokens.map(t => isAcordeToken(t) ? transporAcorde(t, semitons) : t).join(' ');
+    if (!ehLinhaDeAcordes(linha)) return linha;
+
+    // Encontra todos os acordes e suas posições
+    const regex = /([A-Ga-g][#b]?[A-Za-z0-9#()*+°/-]*)/g;
+    const matches: { start: number; end: number; token: string }[] = [];
+    let m: RegExpExecArray | null;
+    while ((m = regex.exec(linha)) !== null) {
+      const token = m[1];
+      if (isAcordeToken(token)) {
+        matches.push({ start: m.index, end: m.index + token.length, token });
+      }
     }
-    return linha;
+
+    // Processa da direita para a esquerda, mantendo posições originais
+    let nova = linha;
+    for (let i = matches.length - 1; i >= 0; i--) {
+      const { start, end, token } = matches[i];
+      const transposto = transporAcorde(token, semitons);
+      if (transposto !== token) {
+        nova = nova.slice(0, start) + transposto + nova.slice(end);
+      }
+    }
+    return nova;
   }).join('\n');
 }
 
@@ -191,6 +221,7 @@ function App() {
   const [semitons, setSemitons] = useState(0);
   const [formTitulo, setFormTitulo] = useState('');
   const [formAutor, setFormAutor] = useState('');
+  const [formTom, setFormTom] = useState('');
   const [formConteudo, setFormConteudo] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -201,7 +232,7 @@ function App() {
   const abrirMusica = useCallback((musica: Musica) => {
     setSelecionada(musica);
     setModo('ver');
-    setSemitons(0); // reset ao abrir
+    setSemitons(0);
   }, []);
 
   const voltarParaLista = () => {
@@ -213,6 +244,7 @@ function App() {
     setEditingId(null);
     setFormTitulo('');
     setFormAutor('');
+    setFormTom('');
     setFormConteudo('');
     setModo('nova');
   };
@@ -221,6 +253,7 @@ function App() {
     setEditingId(musica.id);
     setFormTitulo(musica.titulo);
     setFormAutor(musica.autor);
+    setFormTom(musica.tom || '');
     setFormConteudo(musica.conteudo);
     setModo('editar');
   };
@@ -234,7 +267,7 @@ function App() {
     if (editingId) {
       setMusicas(prev => prev.map(m =>
         m.id === editingId
-          ? { ...m, titulo: formTitulo, autor: formAutor, conteudo: formConteudo, alteradaEm: Date.now() }
+          ? { ...m, titulo: formTitulo, autor: formAutor, tom: formTom, conteudo: formConteudo, alteradaEm: Date.now() }
           : m
       ));
     } else {
@@ -242,6 +275,7 @@ function App() {
         id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         titulo: formTitulo,
         autor: formAutor,
+        tom: formTom,
         conteudo: formConteudo,
         criadaEm: Date.now(),
         alteradaEm: Date.now(),
@@ -263,6 +297,20 @@ function App() {
     const a = document.createElement('a');
     a.href = url;
     a.download = 'cifras-espiritas-backup.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportarTxt = () => {
+    const texto = musicas.map(musica => {
+      const tom = musica.tom ? `Tom: ${musica.tom}\n` : '';
+      return `${musica.titulo} - ${musica.autor}\n${tom}\n${musica.conteudo}\n\n=====\n\n`;
+    }).join('');
+    const blob = new Blob([texto], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'cifras-espiritas.txt';
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -300,6 +348,9 @@ function App() {
           <button className="btn-voltar" onClick={voltarParaLista}>← Voltar</button>
           <h2>{selecionada.titulo}</h2>
           <p className="autor">{selecionada.autor}</p>
+          {selecionada.tom && (
+            <p className="tom-original">Tom original: {selecionada.tom}</p>
+          )}
           <div className="botoes-transposicao">
             <button className="btn-tom" onClick={() => setSemitons(s => s - 1)}>Tom-</button>
             <span className="tom-atual">{semitons > 0 ? `+${semitons}` : semitons}</span>
@@ -334,6 +385,10 @@ function App() {
             <input type="text" value={formAutor} onChange={e => setFormAutor(e.target.value)} />
           </label>
           <label className="campo">
+            Tom (opcional):
+            <input type="text" value={formTom} onChange={e => setFormTom(e.target.value)} placeholder="Ex: C, G, Em..." />
+          </label>
+          <label className="campo">
             Cifra (texto):
             <textarea
               value={formConteudo}
@@ -363,7 +418,8 @@ function App() {
 
       <div className="acoes-lista">
         <button className="btn-nova-musica" onClick={abrirEditorNova}>➕ Nova Música</button>
-        <button className="btn-exportar" onClick={exportarBackup}>💾 Exportar backup</button>
+        <button className="btn-exportar" onClick={exportarBackup}>💾 Exportar JSON</button>
+        <button className="btn-exportar-txt" onClick={exportarTxt}>📄 Exportar TXT</button>
         <label className="btn-importar">
           📂 Importar backup
           <input type="file" accept=".json" onChange={importarBackup} hidden />
@@ -375,7 +431,7 @@ function App() {
           <div key={musica.id} className="item-musica" onClick={() => abrirMusica(musica)}>
             <div className="info-musica">
               <strong>{musica.titulo}</strong>
-              <small>{musica.autor}</small>
+              <small>{musica.autor}{musica.tom ? ` • Tom: ${musica.tom}` : ''}</small>
             </div>
             <div className="acoes-item">
               <button className="btn-editar-item" onClick={(e) => { e.stopPropagation(); abrirEditorEditar(musica); }}>✏️</button>
