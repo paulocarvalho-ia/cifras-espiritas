@@ -160,12 +160,9 @@ function transporAcorde(token: string, semitons: number): string {
 
 function isAcordeToken(token: string): boolean {
   if (!token) return false;
-  // Aceita acordes como C, C#, Db, C7M, Bm7(5-), E7(9-), G/B, F#m7(11)
-  // Rejeita palavras que começam com nota mas são longas demais ou têm letras incomuns
   const limpo = token.replace(/[()\d,./#b]/g, '');
   if (limpo.length > 8) return false;
   if (!/^[A-Ga-g]/.test(token)) return false;
-  // rejeita minúsculas que não sejam 'b' (bemol) ou 'm' (menor)
   const rest = token.slice(1);
   if (/[a-su-z]/.test(rest)) return false;
   return /^[A-Ga-g][#b]?[A-Za-z0-9#()*+°/-]*$/.test(token);
@@ -176,7 +173,6 @@ function ehLinhaDeAcordes(linha: string): boolean {
   if (tokens.length === 0) return false;
   const acordes = tokens.filter(t => isAcordeToken(t));
   if (acordes.length === 0) return false;
-  // Se começa com colchetes (ex: [Intro]) e tem acordes, transpor
   if (linha.trim().startsWith('[')) return true;
   const densidade = acordes.length / tokens.length;
   return densidade >= 0.5;
@@ -187,7 +183,6 @@ function transporTexto(texto: string, semitons: number): string {
   return texto.split('\n').map(linha => {
     if (!ehLinhaDeAcordes(linha)) return linha;
 
-    // Encontra todos os acordes e suas posições
     const regex = /([A-Ga-g][#b]?[A-Za-z0-9#()*+°/-]*)/g;
     const matches: { start: number; end: number; token: string }[] = [];
     let m: RegExpExecArray | null;
@@ -198,7 +193,6 @@ function transporTexto(texto: string, semitons: number): string {
       }
     }
 
-    // Processa da direita para a esquerda, mantendo posições originais
     let nova = linha;
     for (let i = matches.length - 1; i >= 0; i--) {
       const { start, end, token } = matches[i];
@@ -291,7 +285,7 @@ function App() {
     }
   };
 
-  const exportarBackup = () => {
+  const exportarBackupGeral = () => {
     const blob = new Blob([JSON.stringify(musicas, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -301,7 +295,7 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
-  const exportarTxt = () => {
+  const exportarTxtGeral = () => {
     const texto = musicas.map(musica => {
       const tom = musica.tom ? `Tom: ${musica.tom}\n` : '';
       return `${musica.titulo} - ${musica.autor}\n${tom}\n${musica.conteudo}\n\n=====\n\n`;
@@ -311,6 +305,31 @@ function App() {
     const a = document.createElement('a');
     a.href = url;
     a.download = 'cifras-espiritas.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportarMusicaTxt = (musica: Musica) => {
+    const texto = transporTexto(musica.conteudo, semitons);
+    const tom = musica.tom ? `Tom original: ${musica.tom}\n` : '';
+    const cabecalho = `${musica.titulo} - ${musica.autor}\n${tom}${texto}\n`;
+    const blob = new Blob([cabecalho], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${musica.titulo.replace(/\s+/g, '-').toLowerCase()}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportarMusicaJson = (musica: Musica) => {
+    const texto = transporTexto(musica.conteudo, semitons);
+    const dados = { ...musica, conteudo: texto };
+    const blob = new Blob([JSON.stringify(dados, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${musica.titulo.replace(/\s+/g, '-').toLowerCase()}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -349,7 +368,7 @@ function App() {
           <h2>{selecionada.titulo}</h2>
           <p className="autor">{selecionada.autor}</p>
           {selecionada.tom && (
-            <p className="tom-original">Tom original: {selecionada.tom}</p>
+            <p className="tom-original">Tom original: <strong>{selecionada.tom}</strong></p>
           )}
           <div className="botoes-transposicao">
             <button className="btn-tom" onClick={() => setSemitons(s => s - 1)}>Tom-</button>
@@ -362,6 +381,8 @@ function App() {
         </div>
         <div className="barra-inferior">
           <button className="btn-editar" onClick={() => abrirEditorEditar(selecionada)}>✏️ Editar</button>
+          <button className="btn-exportar-musica" onClick={() => exportarMusicaTxt(selecionada)}>📄 TXT</button>
+          <button className="btn-exportar-musica" onClick={() => exportarMusicaJson(selecionada)}>💾 JSON</button>
           <button className="btn-excluir" onClick={() => { if (confirm('Excluir esta música?')) { excluirMusica(selecionada.id); voltarParaLista(); } }}>🗑️ Excluir</button>
         </div>
       </div>
@@ -418,8 +439,8 @@ function App() {
 
       <div className="acoes-lista">
         <button className="btn-nova-musica" onClick={abrirEditorNova}>➕ Nova Música</button>
-        <button className="btn-exportar" onClick={exportarBackup}>💾 Exportar JSON</button>
-        <button className="btn-exportar-txt" onClick={exportarTxt}>📄 Exportar TXT</button>
+        <button className="btn-exportar" onClick={exportarBackupGeral}>💾 Exportar JSON</button>
+        <button className="btn-exportar-txt" onClick={exportarTxtGeral}>📄 Exportar TXT</button>
         <label className="btn-importar">
           📂 Importar backup
           <input type="file" accept=".json" onChange={importarBackup} hidden />
